@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Restaurant Tabletop Story</title>
+  
+  <style>
+    html, body {
+      position: relative;
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #000;
+    }
+
+    #ar-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* UI Overlay */
+    #overlay-ui {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      padding: 20px;
+    }
+
+    .glass-card {
+      background: rgba(18, 18, 20, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 14px;
+      padding: 14px 18px;
+      color: #fff;
+      pointer-events: auto;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      background: #ff4757;
+      color: white;
+    }
+
+    .badge.found {
+      background: #2ed573;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: #a4b0be;
+    }
+
+    #scan-guide {
+      align-self: center;
+      margin-bottom: 40px;
+      text-align: center;
+      transition: opacity 0.3s ease;
+    }
+
+    #scan-guide.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .reticle {
+      width: 180px;
+      height: 180px;
+      border: 2px dashed rgba(255, 255, 255, 0.6);
+      border-radius: 16px;
+      margin: 0 auto 12px;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.96); opacity: 0.5; }
+      50% { transform: scale(1.04); opacity: 0.9; }
+      100% { transform: scale(0.96); opacity: 0.5; }
+    }
+  </style>
+
+  <!-- Import maps polyfill for browsers lacking ES Module importmap support -->
+  <script async src="https://unpkg.com/es-module-shims@1.7.0/dist/es-module-shims.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <div id="ar-container"></div>
+
+  <div id="overlay-ui">
+    <!-- Status Header -->
+    <div class="glass-card">
+      <div id="target-status" class="badge">Searching Tabletop Target...</div>
+      <h2>Chef Marco's Micro Kitchen</h2>
+      <p id="story-step">Point your camera at the coaster/menu to begin.</p>
+    </div>
+
+    <!-- Scanning Target Prompt -->
+    <div id="scan-guide" class="glass-card">
+      <div class="reticle"></div>
+      <div>Align Target Inside Frame</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { MindARThree } from 'mindar-image-three';
+
+    const container = document.querySelector("#ar-container");
+    const statusBadge = document.querySelector("#target-status");
+    const storyStep = document.querySelector("#story-step");
+    const scanGuide = document.querySelector("#scan-guide");
+
+    // 1. Initialize MindAR
+    const mindarThree = new MindARThree({
+      container: container,
+      imageTargetSrc: './targets.mind', // Path to your compiled targets.mind file
+      maxTrack: 1,
+      uiScanning: "no", // We use our custom UI
+      filterMinCF: 0.0001,
+      filterBeta: 0.001
+    });
+
+    const { renderer, scene, camera } = mindarThree;
+
+    // 2. Lighting Setup
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfffaed, 2.0);
+    dirLight.position.set(1, 3, 2);
+    scene.add(dirLight);
+
+    // 3. Anchor Setup
+    const anchor = mindarThree.addAnchor(0);
+
+    // 4. Procedural Tabletop Chef Scene (Zero external 3D files needed)
+    const cookingGroup = new THREE.Group();
+    anchor.group.add(cookingGroup);
+
+    // Coaster Base Platter (Cylinder)
+    const plateGeo = new THREE.CylinderGeometry(0.55, 0.5, 0.04, 32);
+    const plateMat = new THREE.MeshStandardMaterial({ 
+      color: 0x1f1f24, 
+      roughness: 0.4,
+      metalness: 0.6 
+    });
+    const plate = new THREE.Mesh(plateGeo, plateMat);
+    plate.position.y = -0.02;
+    cookingGroup.add(plate);
+
+    // Mini Frying Pan
+    const panGeo = new THREE.CylinderGeometry(0.32, 0.28, 0.05, 32);
+    const panMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.3 });
+    const pan = new THREE.Mesh(panGeo, panMat);
+    pan.position.y = 0.03;
+    cookingGroup.add(pan);
+
+    // Pan Handle
+    const handleGeo = new THREE.BoxGeometry(0.06, 0.03, 0.35);
+    const handle = new THREE.Mesh(handleGeo, panMat);
+    handle.position.set(0, 0.03, 0.35);
+    cookingGroup.add(handle);
+
+    // Food Patty
+    const pattyGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.06, 24);
+    const pattyMat = new THREE.MeshStandardMaterial({ color: 0x8b3a1a, roughness: 0.9 });
+    const patty = new THREE.Mesh(pattyGeo, pattyMat);
+    patty.position.set(0, 0.08, 0);
+    cookingGroup.add(patty);
+
+    // Mini Chef Hat (Procedural)
+    const hatGroup = new THREE.Group();
+    const hatBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.09, 0.08, 20),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
+    );
+    const hatPuff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
+    );
+    hatPuff.position.y = 0.07;
+    hatGroup.add(hatBase);
+    hatGroup.add(hatPuff);
+    hatGroup.position.set(0.28, 0.2, -0.2);
+    hatGroup.scale.set(0.8, 0.8, 0.8);
+    cookingGroup.add(hatGroup);
+
+    // Steam / Sizzle Particle System
+    const particleCount = 20;
+    const particleGeo = new THREE.DodecahedronGeometry(0.025, 0);
+    const particleMat = new THREE.MeshBasicMaterial({ 
+      color: 0xffffff, 
+      transparent: true, 
+      opacity: 0.5 
+    });
+    
+    const particles = [];
+    for (let i = 0; i < particleCount; i++) {
+      const p = new THREE.Mesh(particleGeo, particleMat.clone());
+      p.position.set(
+        (Math.random() - 0.5) * 0.2,
+        0.1 + Math.random() * 0.2,
+        (Math.random() - 0.5) * 0.2
+      );
+      cookingGroup.add(p);
+      particles.push({
+        mesh: p,
+        speedY: 0.003 + Math.random() * 0.004,
+        baseX: p.position.x,
+        baseZ: p.position.z,
+        life: Math.random()
+      });
+    }
+
+    // Optional: How to load your custom .glb later:
+    /*
+    const loader = new GLTFLoader();
+    loader.load('your_character.glb', (gltf) => {
+      const model = gltf.scene;
+      model.scale.set(0.1, 0.1, 0.1);
+      anchor.group.add(model);
+    });
+    */
+
+    // 5. Tracking Target Events
+    anchor.onTargetFound = () => {
+      statusBadge.textContent = "Target Locked!";
+      statusBadge.classList.add("found");
+      storyStep.textContent = "Act 2: Chef Marco is searing the Wagyu on your table!";
+      scanGuide.classList.add("hidden");
+    };
+
+    anchor.onTargetLost = () => {
+      statusBadge.textContent = "Searching Tabletop Target...";
+      statusBadge.classList.remove("found");
+      storyStep.textContent = "Point your camera back at the table coaster.";
+      scanGuide.classList.remove("hidden");
+    };
+
+    // 6. Start MindAR Engine & Render Loop
+    const startAR = async () => {
+      try {
+        await mindarThree.start();
+        renderer.setAnimationLoop(() => {
+          const time = Date.now() * 0.003;
+
+          // Sizzle / Bounce animation for Patty
+          patty.position.y = 0.08 + Math.sin(time * 6) * 0.006;
+          
+          // Chef hat subtle bobbing
+          hatGroup.position.y = 0.2 + Math.cos(time * 3) * 0.015;
+          hatGroup.rotation.y += 0.01;
+
+          // Steam rise loop
+          particles.forEach(p => {
+            p.mesh.position.y += p.speedY;
+            p.life += 0.02;
+            p.mesh.material.opacity = Math.max(0, 0.6 - p.life);
+            if (p.life >= 0.6) {
+              p.life = 0;
+              p.mesh.position.y = 0.1;
+              p.mesh.position.x = p.baseX + (Math.random() - 0.5) * 0.05;
+              p.mesh.position.z = p.baseZ + (Math.random() - 0.5) * 0.05;
+            }
+          });
+
+          renderer.render(scene, camera);
+        });
+      } catch (err) {
+        console.error("MindAR initialization failed:", err);
+        statusBadge.textContent = "Camera Error";
+        storyStep.textContent = "Ensure camera permissions are allowed and HTTPS is active.";
+      }
+    };
+
+    startAR();
+  </script>
+</body>
+</html>
